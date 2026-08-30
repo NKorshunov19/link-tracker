@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: link-tracker
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/tracker}
+    username: ${DB_USER:tracker}
+    password: ${DB_PASSWORD:tracker}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+
+app:
+  github:
+    base-url: ${GITHUB_API_URL:https://api.github.com}
+    # Без токена лимит GitHub — 60 запросов в час на IP, с токеном 5000.
+    token: ${GITHUB_TOKEN:}
+    max-attempts: 3
+    initial-backoff: PT1S
+    connect-timeout: PT3S
+    read-timeout: PT5S
+  poll:
+    tick: PT30S
+    min-interval: PT5M
+    batch-size: 50
+    failure-limit: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    ru.nkorshunov.tracker: INFO
