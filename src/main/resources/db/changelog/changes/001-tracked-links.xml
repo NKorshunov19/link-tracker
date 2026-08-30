@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <changeSet id="001-tracked-links" author="nkorshunov">
+        <createTable tableName="tracked_links">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="subscriber" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="owner_name" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="repository_name" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_pushed_at" type="timestamp"/>
+            <column name="etag" type="varchar(128)"/>
+            <column name="last_checked_at" type="timestamp"/>
+            <column name="consecutive_failures" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <!-- Один подписчик не может дважды отслеживать один репозиторий.
+             Правило продублировано в БД, а не только в коде: гонка двух параллельных
+             запросов «добавить ссылку» прошла бы мимо проверки в сервисе. -->
+        <addUniqueConstraint
+                tableName="tracked_links"
+                columnNames="subscriber, owner_name, repository_name"
+                constraintName="uq_tracked_links_subscriber_repo"/>
+    </changeSet>
+
+    <changeSet id="002-idx-due-for-check" author="nkorshunov">
+        <!-- Планировщик каждые полминуты спрашивает «какие активные ссылки давно не проверялись».
+             Без индекса это полный скан таблицы на каждый тик. -->
+        <createIndex tableName="tracked_links" indexName="idx_tracked_links_due">
+            <column name="active"/>
+            <column name="last_checked_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
