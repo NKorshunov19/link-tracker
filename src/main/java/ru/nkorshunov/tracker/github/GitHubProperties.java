@@ -18,4 +18,12 @@ public record GitHubProperties(
         Duration connectTimeout,
         Duration readTimeout
 ) {
+
+    // запись сама попадает в логи при ошибке привязки конфигурации — токен туда попасть не должен
+    @Override
+    public String toString() {
+        return "GitHubProperties[baseUrl=%s, token=%s, maxAttempts=%d, initialBackoff=%s, connectTimeout=%s, readTimeout=%s]"
+                .formatted(baseUrl, token == null || token.isBlank() ? "нет" : "***",
+                        maxAttempts, initialBackoff, connectTimeout, readTimeout);
+    }
 }

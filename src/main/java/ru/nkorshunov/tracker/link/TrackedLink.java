@@ -149,10 +149,6 @@ public class TrackedLink {
         return active;
     }
 
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) {
