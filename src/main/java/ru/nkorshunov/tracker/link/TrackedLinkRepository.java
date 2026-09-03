@@ -7,13 +7,10 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 public interface TrackedLinkRepository extends JpaRepository<TrackedLink, Long> {
 
     List<TrackedLink> findAllBySubscriber(String subscriber);
-
-    Optional<TrackedLink> findBySubscriberAndOwnerAndRepository(String subscriber, String owner, String repository);
 
     boolean existsBySubscriberAndOwnerAndRepository(String subscriber, String owner, String repository);
 

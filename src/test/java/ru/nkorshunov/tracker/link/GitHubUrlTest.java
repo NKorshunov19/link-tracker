@@ -30,6 +30,9 @@ class GitHubUrlTest {
             "https://github.com/owner",
             "https://github.com/owner/repo/issues/1",
             "github.com/owner/repo",
+            "https://github.com/../repo",
+            "https://github.com/owner/..",
+            "https://github.com/-owner/repo",
             "не ссылка",
             ""
     })
@@ -49,5 +52,21 @@ class GitHubUrlTest {
     void handlesDotsAndDashes() {
         assertThat(GitHubUrl.parse("https://github.com/my-org/my.repo-name"))
                 .contains(new GitHubUrl("my-org", "my.repo-name"));
+    }
+
+    @Test
+    @DisplayName("репозиторий, начинающийся с точки, — законное имя на GitHub")
+    void handlesLeadingDotInRepositoryName() {
+        assertThat(GitHubUrl.parse("https://github.com/my-org/.github"))
+                .contains(new GitHubUrl("my-org", ".github"));
+    }
+
+    @Test
+    @DisplayName("слишком длинные имена отклоняются, а не падают на вставке в базу")
+    void rejectsOverlongNames() {
+        assertThat(GitHubUrl.parse("https://github.com/" + "a".repeat(40) + "/repo")).isEmpty();
+        assertThat(GitHubUrl.parse("https://github.com/owner/" + "b".repeat(101))).isEmpty();
+        assertThat(GitHubUrl.parse("https://github.com/" + "a".repeat(39) + "/" + "b".repeat(100)))
+                .isPresent();
     }
 }

@@ -12,8 +12,11 @@ import java.util.regex.Pattern;
  */
 public record GitHubUrl(String owner, String repository) {
 
+    // длины и наборы символов взяты у самого GitHub: владелец до 39 знаков без точек,
+    // репозиторий до 100. Свободный [\w.-]+ пропускал бы «..» и уводил путь запроса
+    // из /repos наверх, а слишком длинное имя не влезало бы в varchar(128) и падало 500-й
     private static final Pattern PATTERN = Pattern.compile(
-            "^https?://(?:www\\.)?github\\.com/([\\w.-]+)/([\\w.-]+?)(?:\\.git)?/?$");
+            "^https?://(?:www\\.)?github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9_.-]{1,100}?)(?:\\.git)?/?$");
 
     public static Optional<GitHubUrl> parse(String url) {
         if (url == null) {
@@ -23,7 +26,11 @@ public record GitHubUrl(String owner, String repository) {
         if (!matcher.matches()) {
             return Optional.empty();
         }
-        return Optional.of(new GitHubUrl(matcher.group(1), matcher.group(2)));
+        String repository = matcher.group(2);
+        if (repository.equals(".") || repository.equals("..")) {
+            return Optional.empty();
+        }
+        return Optional.of(new GitHubUrl(matcher.group(1), repository));
     }
 
     public String fullName() {

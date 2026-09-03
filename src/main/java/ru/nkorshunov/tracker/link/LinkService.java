@@ -22,11 +22,11 @@ public class LinkService {
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
                         "Ожидается ссылка вида https://github.com/owner/repo"));
 
-        repository.findBySubscriberAndOwnerAndRepository(request.subscriber(), url.owner(), url.repository())
-                .ifPresent(existing -> {
-                    throw new ApiException(HttpStatus.CONFLICT,
-                            "Репозиторий " + url.fullName() + " уже отслеживается");
-                });
+        if (repository.existsBySubscriberAndOwnerAndRepository(
+                request.subscriber(), url.owner(), url.repository())) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "Репозиторий " + url.fullName() + " уже отслеживается");
+        }
 
         return LinkResponse.from(repository.save(new TrackedLink(request.subscriber(), url)));
     }
