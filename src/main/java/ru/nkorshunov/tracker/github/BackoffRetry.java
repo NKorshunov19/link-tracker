@@ -8,20 +8,6 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-/**
- * Повтор с экспоненциальной задержкой и джиттером.
- *
- * Зачем экспоненциальная задержка: если внешний сервис лёг, повторять каждые 100 мс —
- * значит добивать его и тратить свой лимит впустую. Задержка удваивается: 1с, 2с, 4с.
- *
- * Зачем джиттер: без него все клиенты, упавшие в одну секунду, повторят запрос
- * тоже в одну секунду и уронят сервис повторно — это называется thundering herd.
- * Случайный разброс ±25% размазывает нагрузку.
- *
- * В продакшене это делает Resilience4j. Здесь написано руками и покрыто тестами
- * намеренно: политика повторов — та часть, где ошибки дороги, и хотелось, чтобы
- * она была явной и проверяемой, а не спрятанной в конфиге.
- */
 public class BackoffRetry {
 
     private static final Logger log = LoggerFactory.getLogger(BackoffRetry.class);
@@ -32,7 +18,6 @@ public class BackoffRetry {
     private final Duration initialBackoff;
     private final Sleeper sleeper;
 
-    /** Отдельный интерфейс сна, чтобы тесты не ждали по-настоящему. */
     @FunctionalInterface
     public interface Sleeper {
         void sleep(Duration duration) throws InterruptedException;
@@ -54,11 +39,6 @@ public class BackoffRetry {
         this.sleeper = sleeper;
     }
 
-    /**
-     * Выполняет действие, повторяя его, пока результат считается «стоит повторить».
-     * Возвращает последний полученный результат — даже если он неудачный:
-     * решать, что с ним делать, должен вызывающий, а не политика повторов.
-     */
     public <T> T execute(Supplier<T> action, Predicate<T> shouldRetry) {
         T result = action.get();
         for (int attempt = 1; attempt < maxAttempts; attempt++) {
@@ -70,7 +50,6 @@ public class BackoffRetry {
             try {
                 sleeper.sleep(delay);
             } catch (InterruptedException e) {
-                // Восстанавливаем флаг: проглотить прерывание — значит сломать остановку приложения.
                 Thread.currentThread().interrupt();
                 return result;
             }
@@ -79,7 +58,6 @@ public class BackoffRetry {
         return result;
     }
 
-    /** Задержка для попытки: initial * 2^(attempt-1), сдвинутая случайно на ±25%. */
     Duration delayForAttempt(int attempt) {
         long base = baseDelayMillis(attempt);
         long jitter = (long) (base * JITTER_RATIO);
@@ -87,8 +65,7 @@ public class BackoffRetry {
         return Duration.ofMillis(Math.max(1, randomized));
     }
 
-    // удвоение в цикле с проверкой потолка, а не сдвигом: 1L << 63 ушёл бы в минус,
-    // а сдвиг на 64 и больше в Java вообще считается по модулю разрядности
+    // удвоение циклом, а не сдвигом: 1L << 63 ушёл бы в минус, а сдвиг на 64 считается по модулю разрядности
     private long baseDelayMillis(int attempt) {
         long capped = MAX_BACKOFF.toMillis();
         long millis = initialBackoff.toMillis();

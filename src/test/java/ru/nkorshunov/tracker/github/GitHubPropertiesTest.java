@@ -22,7 +22,7 @@ class GitHubPropertiesTest {
     }
 
     @Test
-    @DisplayName("пустой токен так и виден как отсутствующий")
+    @DisplayName("пустой токен виден как отсутствующий")
     void toStringMarksMissingToken() {
         GitHubProperties properties = new GitHubProperties(
                 "https://api.github.com", "", 3,

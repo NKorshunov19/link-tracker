@@ -33,14 +33,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Тесты клиента против настоящего HTTP-сервера, а не против мока.
- *
- * Разница принципиальная: мок вернул бы то, что я ему велел, и проверил бы только мою
- * же выдумку. WireMock отдаёт реальные коды, заголовки и умеет держать паузу — поэтому
- * здесь проверяются вещи, которые на моках не проверишь: условный запрос с If-None-Match,
- * обработка 304, поведение при таймауте и то, что 404 не повторяется.
- */
 class GitHubClientTest {
 
     private static final String REPO_JSON = """
@@ -102,7 +94,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("при наличии ETag уходит условный запрос, а 304 не считается ошибкой")
+    @DisplayName("с ETag уходит условный запрос, 304 не ошибка")
     void sendsConditionalRequestAndHandlesNotModified() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/spring-projects/spring-boot"))
                 .withHeader(HttpHeaders.IF_NONE_MATCH, equalTo("\"abc123\""))
@@ -116,7 +108,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("404 не повторяется: удалённый репозиторий не появится обратно")
+    @DisplayName("404 не повторяется")
     void doesNotRetryOnNotFound() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/ghost/repo"))
                 .willReturn(aResponse().withStatus(404)));
@@ -164,7 +156,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("403 с исчерпанным лимитом — это RateLimited, и повторов в том же тике нет")
+    @DisplayName("403 с исчерпанным лимитом — RateLimited без повторов")
     void exhaustedRateLimitIsNotRetriedInPlace() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
                 .willReturn(aResponse()
@@ -208,7 +200,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("слишком большое тело не читается в память целиком")
+    @DisplayName("слишком большое тело не читается целиком")
     void oversizedBodyIsRejected() {
         String padding = "x".repeat(2 * 1024 * 1024);
         wireMock.stubFor(get(urlPathEqualTo("/repos/owner/huge"))
@@ -224,7 +216,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("зависший ответ обрывается по таймауту, а не держит поток вечно")
+    @DisplayName("зависший ответ обрывается по таймауту")
     void slowResponseIsCutOffByTimeout() {
         GitHubClient impatient = newClient(Duration.ofMillis(200));
         wireMock.stubFor(get(urlPathEqualTo("/repos/slow/repo"))
@@ -242,7 +234,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("битый JSON не повторяется — он придёт таким же")
+    @DisplayName("битый JSON не повторяется")
     void malformedBodyIsNotRetryable() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
                 .willReturn(aResponse()
@@ -258,7 +250,7 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("ответ закрывается после разбора: иначе соединения утекают")
+    @DisplayName("ответ закрывается после разбора")
     void closesResponseAfterExchange() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
                 .willReturn(aResponse()
@@ -293,10 +285,8 @@ class GitHubClientTest {
                         failed -> assertThat(failed.reason()).contains("pushed_at"));
     }
 
-    /** Считает, сколько раз закрыли ответ: закрытие делает сам RestClient, и это надо проверить. */
     private record CountingRequestFactory(ClientHttpRequestFactory delegate, AtomicInteger closes)
             implements ClientHttpRequestFactory {
-
         CountingRequestFactory(ClientHttpRequestFactory delegate) {
             this(delegate, new AtomicInteger());
         }
@@ -340,7 +330,6 @@ class GitHubClientTest {
 
     private record CountingResponse(ClientHttpResponse delegate, AtomicInteger closes)
             implements ClientHttpResponse {
-
         @Override
         public void close() {
             closes.incrementAndGet();

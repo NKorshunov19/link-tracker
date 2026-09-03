@@ -31,18 +31,15 @@ public class TrackedLink {
     @Column(name = "repository_name", nullable = false, length = 128)
     private String repository;
 
-    /** Момент последнего известного нам изменения. По нему решаем, слать ли уведомление. */
     @Column(name = "last_pushed_at")
     private Instant lastPushedAt;
 
-    /** Заголовок ETag прошлого ответа — для условных запросов If-None-Match. */
     @Column(length = 128)
     private String etag;
 
     @Column(name = "last_checked_at")
     private Instant lastCheckedAt;
 
-    /** Счётчик подряд идущих неудач. По нему отключаем безнадёжные ссылки. */
     @Column(name = "consecutive_failures", nullable = false)
     private int consecutiveFailures;
 
@@ -53,7 +50,6 @@ public class TrackedLink {
     private Instant createdAt = Instant.now();
 
     protected TrackedLink() {
-        // требуется JPA
     }
 
     public TrackedLink(String subscriber, GitHubUrl url) {
@@ -62,13 +58,6 @@ public class TrackedLink {
         this.repository = url.repository();
     }
 
-    /**
-     * Записывает результат успешной проверки.
-     * Возвращает true, если изменение новое и подписчика нужно уведомить.
-     *
-     * Сравнение строго по «позже», а не «не равно»: если GitHub по какой-то причине
-     * вернёт более старую дату, повторного уведомления быть не должно.
-     */
     public boolean applyUpdate(Instant pushedAt, String newEtag, Instant checkedAt) {
         this.lastCheckedAt = checkedAt;
         this.etag = newEtag;
@@ -78,8 +67,6 @@ public class TrackedLink {
         boolean isNewer = !firstCheck && pushedAt.isAfter(this.lastPushedAt);
         this.lastPushedAt = pushedAt;
 
-        // На первой проверке не уведомляем: подписчик только что добавил ссылку
-        // и не ждёт сообщения о том, что было до него.
         return isNewer;
     }
 
@@ -88,15 +75,10 @@ public class TrackedLink {
         this.consecutiveFailures = 0;
     }
 
-    /**
-     * Отмечает, что проверка не состоялась из-за лимита GitHub.
-     * Счётчик неудач не трогаем: ссылка исправна, виноват общий на всё приложение лимит.
-     */
     public void markThrottled(Instant checkedAt) {
         this.lastCheckedAt = checkedAt;
     }
 
-    /** Отмечает неудачу и отключает ссылку, если она стабильно не отвечает. */
     public void markFailure(Instant checkedAt, int failureLimit) {
         this.lastCheckedAt = checkedAt;
         this.consecutiveFailures++;

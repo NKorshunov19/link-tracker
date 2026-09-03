@@ -23,13 +23,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Сквозной сценарий: добавили ссылку → планировщик опросил GitHub → пришло уведомление.
- *
- * GitHub подменён WireMock-сервером, его адрес подставляется в конфигурацию через
- * @DynamicPropertySource — порт выделяется операционной системой, поэтому тесты
- * не конфликтуют друг с другом и с занятыми портами на машине.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 class UpdateFlowIntegrationTest {
@@ -83,13 +76,13 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("первая проверка запоминает состояние и молчит, вторая уведомляет об обновлении")
+    @DisplayName("первая проверка молчит, вторая уведомляет")
     void notifiesOnlyOnActualUpdate() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
 
         stubPushedAt("2026-08-30T10:00:00Z", "\"v1\"");
         updateChecker.runOnce();
-        assertThat(notifier.recent()).as("на первой проверке уведомления быть не должно").isEmpty();
+        assertThat(notifier.recent()).as("первая проверка молчит").isEmpty();
 
         stubPushedAt("2026-08-31T12:00:00Z", "\"v2\"");
         updateChecker.runOnce();
@@ -100,7 +93,7 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("повторная проверка без изменений не шлёт уведомление второй раз")
+    @DisplayName("без изменений уведомление не повторяется")
     void doesNotNotifyTwiceForSamePush() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         stubPushedAt("2026-08-30T10:00:00Z", "\"v1\"");
@@ -128,7 +121,7 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("ответ 304 обновляет время проверки, но не трогает состояние репозитория")
+    @DisplayName("304 обновляет время проверки, но не состояние")
     void notModifiedKeepsState() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         stubPushedAt("2026-08-30T10:00:00Z", "\"v1\"");
@@ -145,7 +138,7 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("удалённый репозиторий (404) отключается сразу, без ожидания лимита неудач")
+    @DisplayName("удалённый репозиторий отключается сразу")
     void missingRepositoryIsDeactivatedImmediately() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         wireMock.stubFor(get(urlPathEqualTo(REPO_PATH)).willReturn(aResponse().withStatus(404)));
@@ -161,7 +154,6 @@ class UpdateFlowIntegrationTest {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         wireMock.stubFor(get(urlPathEqualTo(REPO_PATH)).willReturn(aResponse().withStatus(500)));
 
-        // failure-limit в тестовой конфигурации равен 3
         updateChecker.runOnce();
         assertThat(repository.findAll().getFirst().isActive()).isTrue();
         updateChecker.runOnce();
@@ -187,7 +179,7 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("исчерпанный лимит GitHub не выключает ссылку и не копит неудачи")
+    @DisplayName("лимит GitHub не выключает ссылку")
     void rateLimitDoesNotDeactivateLink() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         wireMock.stubFor(get(urlPathEqualTo(REPO_PATH))
@@ -202,11 +194,11 @@ class UpdateFlowIntegrationTest {
         TrackedLink stored = repository.findAll().getFirst();
         assertThat(stored.isActive()).isTrue();
         assertThat(stored.getConsecutiveFailures()).isZero();
-        assertThat(stored.getLastCheckedAt()).as("время проверки всё равно сдвигается").isNotNull();
+        assertThat(stored.getLastCheckedAt()).as("время проверки сдвигается").isNotNull();
     }
 
     @Test
-    @DisplayName("один битый ответ не выключает ссылку сразу, а идёт в счётчик неудач")
+    @DisplayName("битый ответ идёт в счётчик неудач, а не выключает ссылку")
     void malformedResponseCountsAsFailure() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         wireMock.stubFor(get(urlPathEqualTo(REPO_PATH))
@@ -223,7 +215,7 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("сбой проверки не стирает ETag: следующий запрос снова условный")
+    @DisplayName("сбой проверки не стирает ETag")
     void failedCheckKeepsEtag() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));
         stubPushedAt("2026-08-30T10:00:00Z", "\"v1\"");

@@ -9,11 +9,6 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class GitHubClientConfig {
 
-    /**
-     * Таймауты заданы явно и это не мелочь: по умолчанию их нет вовсе.
-     * Один зависший запрос к внешнему API остановил бы весь планировщик —
-     * поток занят, остальные репозитории не опрашиваются.
-     */
     @Bean
     public RestClient gitHubRestClient(GitHubProperties properties) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();

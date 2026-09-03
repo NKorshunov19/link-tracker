@@ -15,17 +15,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 
-/**
- * Обработка одной ссылки.
- *
- * Отдельный бин с REQUIRES_NEW: каждая ссылка обрабатывается в собственной транзакции.
- * Если бы весь тик планировщика шёл одной транзакцией, ошибка на девятой ссылке
- * откатила бы результаты первых восьми — и они проверялись бы заново на следующем тике.
- *
- * Уведомление здесь не отправляется, а только собирается: отправку делает вызывающий
- * после коммита. Иначе упавший Notifier откатывал бы уже записанное состояние ссылки,
- * и подписчик получал бы одно и то же обновление на каждом тике.
- */
 @Component
 public class LinkUpdateProcessor {
 
@@ -56,7 +45,6 @@ public class LinkUpdateProcessor {
         PollResult result = gitHubClient.poll(link.getOwner(), link.getRepository(), link.getEtag());
         Instant now = clock.instant();
 
-        // switch по sealed-интерфейсу: компилятор проверит, что разобраны все случаи.
         switch (result) {
             case PollResult.Updated updated -> {
                 if (link.applyUpdate(updated.pushedAt(), updated.etag(), now)) {
@@ -69,6 +57,7 @@ public class LinkUpdateProcessor {
                 log.info("Репозиторий {} больше не существует, ссылка отключена", link.fullName());
                 link.deactivate();
             }
+            // лимит общий на всё приложение, счётчик неудач конкретной ссылки за него не наказываем
             case PollResult.RateLimited limited -> {
                 log.warn("Лимит GitHub исчерпан, проверка {} отложена (Retry-After: {})",
                         link.fullName(), limited.retryAfter());

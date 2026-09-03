@@ -43,7 +43,6 @@ public class LinkService {
         TrackedLink link = repository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Ссылка не найдена"));
         if (!link.getSubscriber().equals(subscriber)) {
-            // 404, а не 403: чужая подписка не должна подтверждать своё существование.
             throw new ApiException(HttpStatus.NOT_FOUND, "Ссылка не найдена");
         }
         repository.delete(link);

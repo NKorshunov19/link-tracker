@@ -50,7 +50,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    @DisplayName("упавшая доставка уведомления не срывает остальные ссылки")
+    @DisplayName("упавшая доставка не срывает остальные ссылки")
     void notifierFailureDoesNotStopTheTick() {
         due(1L, 2L);
         when(processor.process(any())).thenReturn(Optional.of(
@@ -59,7 +59,7 @@ class UpdateCheckerTest {
 
         int processed = checker.runOnce();
 
-        assertThat(processed).as("состояние ссылок уже закоммичено, тик считается успешным").isEqualTo(2);
+        assertThat(processed).as("состояние уже закоммичено").isEqualTo(2);
         verify(notifier, times(2)).send(any());
     }
 

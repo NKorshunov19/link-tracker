@@ -17,11 +17,6 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 
 import java.util.stream.Collectors;
 
-/**
- * Наследование от ResponseEntityExceptionHandler обязательно: без него catch-all
- * на Exception перехватывает служебные исключения Spring MVC и превращает
- * честный 400 в 500.
- */
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
@@ -40,8 +35,6 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, details);
     }
 
-    // сюда прилетает гонка двух параллельных «добавить ссылку»: проверку в сервисе
-    // они проходят обе, а ограничение уникальности в базе — только одна
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         log.warn("Нарушение ограничения БД: {}", ex.getMostSpecificCause().getMessage());

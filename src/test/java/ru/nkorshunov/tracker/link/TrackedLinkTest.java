@@ -18,7 +18,7 @@ class TrackedLinkTest {
     }
 
     @Test
-    @DisplayName("первая проверка не уведомляет: подписчик только что добавил ссылку")
+    @DisplayName("первая проверка не уведомляет")
     void firstCheckDoesNotNotify() {
         TrackedLink link = link();
 
@@ -48,7 +48,7 @@ class TrackedLinkTest {
     }
 
     @Test
-    @DisplayName("более старое время не уведомляет — защита от чудес на стороне API")
+    @DisplayName("более старое время не уведомляет")
     void olderPushDoesNotNotify() {
         TrackedLink link = link();
         link.applyUpdate(LATER, "etag-1", NOW);

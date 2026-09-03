@@ -33,9 +33,6 @@
             </column>
         </createTable>
 
-        <!-- Один подписчик не может дважды отслеживать один репозиторий.
-             Правило продублировано в БД, а не только в коде: гонка двух параллельных
-             запросов «добавить ссылку» прошла бы мимо проверки в сервисе. -->
         <addUniqueConstraint
                 tableName="tracked_links"
                 columnNames="subscriber, owner_name, repository_name"
@@ -43,8 +40,6 @@
     </changeSet>
 
     <changeSet id="002-idx-due-for-check" author="nkorshunov">
-        <!-- Планировщик каждые полминуты спрашивает «какие активные ссылки давно не проверялись».
-             Без индекса это полный скан таблицы на каждый тик. -->
         <createIndex tableName="tracked_links" indexName="idx_tracked_links_due">
             <column name="active"/>
             <column name="last_checked_at"/>

@@ -8,13 +8,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Пишет уведомления в лог и держит их последние экземпляры в памяти.
- *
- * Список нужен интеграционным тестам, чтобы проверить, что уведомление действительно
- * ушло. Он ограничен по размеру: иначе на долгоживущем приложении это была бы
- * утечка памяти — список рос бы бесконечно.
- */
 @Component
 public class LoggingNotifier implements Notifier {
 

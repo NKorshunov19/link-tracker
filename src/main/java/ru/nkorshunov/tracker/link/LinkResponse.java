@@ -10,7 +10,6 @@ public record LinkResponse(
         Instant lastCheckedAt,
         boolean active
 ) {
-
     public static LinkResponse from(TrackedLink link) {
         return new LinkResponse(
                 link.getId(),

@@ -71,7 +71,7 @@ class LinkApiWebTest {
     }
 
     @Test
-    @DisplayName("ссылка не на репозиторий GitHub отклоняется с 400 и ProblemDetail")
+    @DisplayName("ссылка не на GitHub — 400 с ProblemDetail")
     void invalidUrlIsRejected() throws Exception {
         mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -84,7 +84,7 @@ class LinkApiWebTest {
     }
 
     @Test
-    @DisplayName("ссылка с лишним путём отклоняется, а не сохраняется как репозиторий")
+    @DisplayName("ссылка с лишним путём отклоняется")
     void urlWithExtraPathIsRejected() throws Exception {
         mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -116,7 +116,7 @@ class LinkApiWebTest {
     }
 
     @Test
-    @DisplayName("нечисловой идентификатор ссылки даёт 400 без внутренностей в теле")
+    @DisplayName("нечисловой id — 400 без внутренностей в теле")
     void nonNumericIdIsBadRequest() throws Exception {
         String body = mockMvc.perform(delete("/api/links/abc").param("subscriber", "nikita"))
                 .andExpect(status().isBadRequest())
@@ -164,7 +164,7 @@ class LinkApiWebTest {
     }
 
     @Test
-    @DisplayName("чужую подписку удалить нельзя, и ответ не подтверждает её существование")
+    @DisplayName("чужая подписка не удаляется: 404, а не 403")
     void doesNotRemoveSomeoneElsesSubscription() throws Exception {
         add("nikita", REPO_URL);
         Long id = repository.findAll().getFirst().getId();

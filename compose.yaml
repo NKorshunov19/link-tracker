@@ -22,7 +22,6 @@ services:
       DB_URL: jdbc:postgresql://db:5432/tracker
       DB_USER: tracker
       DB_PASSWORD: tracker
-      # Без токена лимит GitHub — 60 запросов в час на IP
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     ports:
       - "8080:8080"

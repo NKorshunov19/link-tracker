@@ -13,7 +13,6 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 
 class BackoffRetryTest {
 
-    /** Считает, сколько «спали», не тратя реального времени. */
     private final List<Duration> slept = new ArrayList<>();
 
     private BackoffRetry retry(int attempts) {
@@ -36,7 +35,7 @@ class BackoffRetryTest {
     }
 
     @Test
-    @DisplayName("повторяет до успеха и возвращает удачный результат")
+    @DisplayName("повторяет до успеха")
     void retriesUntilSuccess() {
         AtomicInteger calls = new AtomicInteger();
 
@@ -50,7 +49,7 @@ class BackoffRetryTest {
     }
 
     @Test
-    @DisplayName("исчерпав попытки, возвращает последний неудачный результат, а не бросает")
+    @DisplayName("исчерпав попытки, возвращает последний результат, а не бросает")
     void returnsLastFailureWhenAttemptsExhausted() {
         AtomicInteger calls = new AtomicInteger();
 
@@ -69,14 +68,13 @@ class BackoffRetryTest {
     void delayGrowsExponentially() {
         BackoffRetry backoff = retry(4);
 
-        // Джиттер ±25%, поэтому проверяем попадание в диапазон, а не точное значение
         assertThat(backoff.delayForAttempt(1).toMillis()).isBetween(750L, 1250L);
         assertThat(backoff.delayForAttempt(2).toMillis()).isBetween(1500L, 2500L);
         assertThat(backoff.delayForAttempt(3).toMillis()).isBetween(3000L, 5000L);
     }
 
     @Test
-    @DisplayName("одна попытка означает отсутствие повторов")
+    @DisplayName("одна попытка — без повторов")
     void singleAttemptMeansNoRetries() {
         AtomicInteger calls = new AtomicInteger();
 
@@ -90,18 +88,18 @@ class BackoffRetryTest {
     }
 
     @Test
-    @DisplayName("задержка упирается в потолок и не переполняется на больших номерах попыток")
+    @DisplayName("задержка упирается в потолок и не переполняется")
     void delayIsCappedAndDoesNotOverflow() {
         BackoffRetry backoff = new BackoffRetry(64, Duration.ofSeconds(1), slept::add);
 
         assertThat(backoff.delayForAttempt(40).toMillis())
-                .as("2^39 секунд не должны превратиться в отрицательное число")
+                .as("не ушло в минус")
                 .isBetween(45_000L, 75_000L);
         assertThat(backoff.delayForAttempt(63).toMillis()).isBetween(45_000L, 75_000L);
     }
 
     @Test
-    @DisplayName("нулевая задержка не уходит в ноль и не роняет джиттер")
+    @DisplayName("нулевая задержка не роняет джиттер")
     void zeroBackoffStillProducesPositiveDelay() {
         BackoffRetry backoff = new BackoffRetry(3, Duration.ZERO, slept::add);
 
@@ -109,7 +107,7 @@ class BackoffRetryTest {
     }
 
     @Test
-    @DisplayName("отрицательная задержка и нулевое число попыток отвергаются в конструкторе")
+    @DisplayName("отрицательная задержка и ноль попыток отвергаются")
     void invalidSettingsAreRejected() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new BackoffRetry(0, Duration.ofSeconds(1)));

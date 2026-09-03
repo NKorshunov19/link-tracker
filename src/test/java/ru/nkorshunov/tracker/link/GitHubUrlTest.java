@@ -18,7 +18,7 @@ class GitHubUrlTest {
             "https://github.com/spring-projects/spring-boot.git",
             "  https://github.com/spring-projects/spring-boot  "
     })
-    @DisplayName("принимает разумные варианты записи ссылки")
+    @DisplayName("принимает разные варианты записи ссылки")
     void parsesCommonForms(String url) {
         assertThat(GitHubUrl.parse(url))
                 .contains(new GitHubUrl("spring-projects", "spring-boot"));
@@ -55,14 +55,14 @@ class GitHubUrlTest {
     }
 
     @Test
-    @DisplayName("репозиторий, начинающийся с точки, — законное имя на GitHub")
+    @DisplayName("репозиторий, начинающийся с точки, — валидное имя")
     void handlesLeadingDotInRepositoryName() {
         assertThat(GitHubUrl.parse("https://github.com/my-org/.github"))
                 .contains(new GitHubUrl("my-org", ".github"));
     }
 
     @Test
-    @DisplayName("слишком длинные имена отклоняются, а не падают на вставке в базу")
+    @DisplayName("слишком длинные имена отклоняются")
     void rejectsOverlongNames() {
         assertThat(GitHubUrl.parse("https://github.com/" + "a".repeat(40) + "/repo")).isEmpty();
         assertThat(GitHubUrl.parse("https://github.com/owner/" + "b".repeat(101))).isEmpty();

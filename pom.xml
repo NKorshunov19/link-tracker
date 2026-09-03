@@ -60,8 +60,6 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- WireMock поднимает настоящий HTTP-сервер и отдаёт заранее заданные ответы.
-             Так тесты проверяют реальные HTTP-коды, заголовки и таймауты, а не заглушку мока. -->
         <dependency>
             <groupId>org.wiremock</groupId>
             <artifactId>wiremock-standalone</artifactId>
