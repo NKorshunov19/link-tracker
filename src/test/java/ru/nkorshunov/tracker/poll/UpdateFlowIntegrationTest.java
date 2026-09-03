@@ -187,6 +187,56 @@ class UpdateFlowIntegrationTest {
     }
 
     @Test
+    @DisplayName("исчерпанный лимит GitHub не выключает ссылку и не копит неудачи")
+    void rateLimitDoesNotDeactivateLink() {
+        linkService.add(new AddLinkRequest("nikita", REPO_URL));
+        wireMock.stubFor(get(urlPathEqualTo(REPO_PATH))
+                .willReturn(aResponse()
+                        .withStatus(403)
+                        .withHeader("x-ratelimit-remaining", "0")));
+
+        for (int i = 0; i < 5; i++) {
+            updateChecker.runOnce();
+        }
+
+        TrackedLink stored = repository.findAll().getFirst();
+        assertThat(stored.isActive()).isTrue();
+        assertThat(stored.getConsecutiveFailures()).isZero();
+        assertThat(stored.getLastCheckedAt()).as("время проверки всё равно сдвигается").isNotNull();
+    }
+
+    @Test
+    @DisplayName("один битый ответ не выключает ссылку сразу, а идёт в счётчик неудач")
+    void malformedResponseCountsAsFailure() {
+        linkService.add(new AddLinkRequest("nikita", REPO_URL));
+        wireMock.stubFor(get(urlPathEqualTo(REPO_PATH))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{это не json")));
+
+        updateChecker.runOnce();
+
+        TrackedLink stored = repository.findAll().getFirst();
+        assertThat(stored.isActive()).isTrue();
+        assertThat(stored.getConsecutiveFailures()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("сбой проверки не стирает ETag: следующий запрос снова условный")
+    void failedCheckKeepsEtag() {
+        linkService.add(new AddLinkRequest("nikita", REPO_URL));
+        stubPushedAt("2026-08-30T10:00:00Z", "\"v1\"");
+        updateChecker.runOnce();
+
+        wireMock.resetAll();
+        wireMock.stubFor(get(urlPathEqualTo(REPO_PATH)).willReturn(aResponse().withStatus(500)));
+        updateChecker.runOnce();
+
+        assertThat(repository.findAll().getFirst().getEtag()).isEqualTo("\"v1\"");
+    }
+
+    @Test
     @DisplayName("сбой на одной ссылке не мешает обработать остальные")
     void failureOnOneLinkDoesNotStopOthers() {
         linkService.add(new AddLinkRequest("nikita", REPO_URL));

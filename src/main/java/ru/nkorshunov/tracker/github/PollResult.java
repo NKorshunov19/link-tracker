@@ -1,5 +1,6 @@
 package ru.nkorshunov.tracker.github;
 
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -7,7 +8,7 @@ import java.time.Instant;
  *
  * Sealed-интерфейс из Java 21: компилятор знает полный список наследников, поэтому
  * switch по нему проверяется на полноту — забыть ветку не получится, сборка не пройдёт.
- * Это лучше, чем возвращать null или бросать исключение на каждый чих: три исхода
+ * Это лучше, чем возвращать null или бросать исключение на каждый чих: исходы
  * здесь равноправны и обрабатываются по-разному.
  */
 public sealed interface PollResult {
@@ -20,10 +21,23 @@ public sealed interface PollResult {
     record NotModified() implements PollResult {
     }
 
+    /** Репозитория больше нет: удалён или переименован. Единственный случай, когда ссылку выключают сразу. */
+    record NotFound() implements PollResult {
+    }
+
+    /**
+     * Лимит запросов GitHub исчерпан. Отдельный случай, а не Failed: сама ссылка исправна,
+     * и считать это её неудачей нельзя — иначе за несколько тиков без токена
+     * (60 запросов в час на IP) выключились бы все подписки разом.
+     * retryAfter — из заголовка Retry-After, если он пришёл.
+     */
+    record RateLimited(Duration retryAfter) implements PollResult {
+    }
+
     /**
      * Обращение не удалось.
-     * retryable отделяет временные сбои (5xx, таймаут, превышен лимит) от постоянных
-     * (404 — репозиторий удалён): повторять второе бессмысленно, это только съест лимит.
+     * retryable отделяет временные сбои (5xx, таймаут) от постоянных (битый ответ, нет доступа):
+     * повторять второе в том же тике бессмысленно.
      */
     record Failed(String reason, boolean retryable) implements PollResult {
     }

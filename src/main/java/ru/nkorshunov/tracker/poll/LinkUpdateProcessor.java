@@ -10,10 +10,10 @@ import ru.nkorshunov.tracker.github.PollResult;
 import ru.nkorshunov.tracker.link.TrackedLink;
 import ru.nkorshunov.tracker.link.TrackedLinkRepository;
 import ru.nkorshunov.tracker.notify.Notification;
-import ru.nkorshunov.tracker.notify.Notifier;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Обработка одной ссылки.
@@ -21,6 +21,10 @@ import java.time.Instant;
  * Отдельный бин с REQUIRES_NEW: каждая ссылка обрабатывается в собственной транзакции.
  * Если бы весь тик планировщика шёл одной транзакцией, ошибка на девятой ссылке
  * откатила бы результаты первых восьми — и они проверялись бы заново на следующем тике.
+ *
+ * Уведомление здесь не отправляется, а только собирается: отправку делает вызывающий
+ * после коммита. Иначе упавший Notifier откатывал бы уже записанное состояние ссылки,
+ * и подписчик получал бы одно и то же обновление на каждом тике.
  */
 @Component
 public class LinkUpdateProcessor {
@@ -29,27 +33,24 @@ public class LinkUpdateProcessor {
 
     private final TrackedLinkRepository repository;
     private final GitHubClient gitHubClient;
-    private final Notifier notifier;
     private final PollProperties properties;
     private final Clock clock;
 
     public LinkUpdateProcessor(TrackedLinkRepository repository,
                                GitHubClient gitHubClient,
-                               Notifier notifier,
                                PollProperties properties,
                                Clock clock) {
         this.repository = repository;
         this.gitHubClient = gitHubClient;
-        this.notifier = notifier;
         this.properties = properties;
         this.clock = clock;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void process(Long linkId) {
+    public Optional<Notification> process(Long linkId) {
         TrackedLink link = repository.findById(linkId).orElse(null);
         if (link == null || !link.isActive()) {
-            return;
+            return Optional.empty();
         }
 
         PollResult result = gitHubClient.poll(link.getOwner(), link.getRepository(), link.getEtag());
@@ -58,22 +59,26 @@ public class LinkUpdateProcessor {
         // switch по sealed-интерфейсу: компилятор проверит, что разобраны все случаи.
         switch (result) {
             case PollResult.Updated updated -> {
-                boolean shouldNotify = link.applyUpdate(updated.pushedAt(), updated.etag(), now);
-                if (shouldNotify) {
-                    notifier.send(new Notification(link.getSubscriber(), link.fullName(), updated.pushedAt()));
+                if (link.applyUpdate(updated.pushedAt(), updated.etag(), now)) {
+                    return Optional.of(
+                            new Notification(link.getSubscriber(), link.fullName(), updated.pushedAt()));
                 }
             }
             case PollResult.NotModified ignored -> link.markUnchanged(now);
+            case PollResult.NotFound ignored -> {
+                log.info("Репозиторий {} больше не существует, ссылка отключена", link.fullName());
+                link.deactivate();
+            }
+            case PollResult.RateLimited limited -> {
+                log.warn("Лимит GitHub исчерпан, проверка {} отложена (Retry-After: {})",
+                        link.fullName(), limited.retryAfter());
+                link.markThrottled(now);
+            }
             case PollResult.Failed failed -> {
                 log.warn("Не удалось проверить {}: {}", link.fullName(), failed.reason());
-                if (failed.retryable()) {
-                    // Временный сбой: считаем неудачу, но не отключаем сразу.
-                    link.markFailure(now, properties.failureLimit());
-                } else {
-                    // Репозиторий удалён или переименован — проверять его дальше бессмысленно.
-                    link.deactivate();
-                }
+                link.markFailure(now, properties.failureLimit());
             }
         }
+        return Optional.empty();
     }
 }

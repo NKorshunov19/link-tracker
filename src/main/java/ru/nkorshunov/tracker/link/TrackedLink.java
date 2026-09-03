@@ -88,6 +88,14 @@ public class TrackedLink {
         this.consecutiveFailures = 0;
     }
 
+    /**
+     * Отмечает, что проверка не состоялась из-за лимита GitHub.
+     * Счётчик неудач не трогаем: ссылка исправна, виноват общий на всё приложение лимит.
+     */
+    public void markThrottled(Instant checkedAt) {
+        this.lastCheckedAt = checkedAt;
+    }
+
     /** Отмечает неудачу и отключает ссылку, если она стабильно не отвечает. */
     public void markFailure(Instant checkedAt, int failureLimit) {
         this.lastCheckedAt = checkedAt;

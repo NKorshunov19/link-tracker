@@ -8,11 +8,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.ClientHttpRequest;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
@@ -112,8 +123,7 @@ class GitHubClientTest {
 
         PollResult result = client.poll("ghost", "repo", null);
 
-        assertThat(result).isInstanceOfSatisfying(PollResult.Failed.class,
-                failed -> assertThat(failed.retryable()).isFalse());
+        assertThat(result).isInstanceOf(PollResult.NotFound.class);
         wireMock.verify(1, getRequestedFor(urlPathEqualTo("/repos/ghost/repo")));
     }
 
@@ -154,17 +164,63 @@ class GitHubClientTest {
     }
 
     @Test
-    @DisplayName("403 при исчерпании лимита GitHub считается временным сбоем")
-    void rateLimitIsRetryable() {
+    @DisplayName("403 с исчерпанным лимитом — это RateLimited, и повторов в том же тике нет")
+    void exhaustedRateLimitIsNotRetriedInPlace() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
-                .willReturn(aResponse().withStatus(403)));
+                .willReturn(aResponse()
+                        .withStatus(403)
+                        .withHeader("x-ratelimit-remaining", "0")));
 
         PollResult result = client.poll("owner", "repo", null);
 
+        assertThat(result).isInstanceOf(PollResult.RateLimited.class);
+        wireMock.verify(1, getRequestedFor(urlPathEqualTo("/repos/owner/repo")));
+    }
+
+    @Test
+    @DisplayName("429 отдаёт RateLimited и сохраняет Retry-After")
+    void tooManyRequestsKeepsRetryAfter() {
+        wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
+                .willReturn(aResponse()
+                        .withStatus(429)
+                        .withHeader("Retry-After", "60")));
+
+        PollResult result = client.poll("owner", "repo", null);
+
+        assertThat(result).isInstanceOfSatisfying(PollResult.RateLimited.class,
+                limited -> assertThat(limited.retryAfter()).isEqualTo(Duration.ofSeconds(60)));
+        wireMock.verify(1, getRequestedFor(urlPathEqualTo("/repos/owner/repo")));
+    }
+
+    @Test
+    @DisplayName("403 без заголовков лимита — это отказ в доступе, а не лимит")
+    void forbiddenWithoutRateLimitHeaderIsNotRateLimited() {
+        wireMock.stubFor(get(urlPathEqualTo("/repos/owner/private"))
+                .willReturn(aResponse().withStatus(403)));
+
+        PollResult result = client.poll("owner", "private", null);
+
         assertThat(result).isInstanceOfSatisfying(PollResult.Failed.class, failed -> {
-            assertThat(failed.retryable()).isTrue();
-            assertThat(failed.reason()).contains("лимит");
+            assertThat(failed.retryable()).isFalse();
+            assertThat(failed.reason()).contains("нет доступа");
         });
+        wireMock.verify(1, getRequestedFor(urlPathEqualTo("/repos/owner/private")));
+    }
+
+    @Test
+    @DisplayName("слишком большое тело не читается в память целиком")
+    void oversizedBodyIsRejected() {
+        String padding = "x".repeat(2 * 1024 * 1024);
+        wireMock.stubFor(get(urlPathEqualTo("/repos/owner/huge"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"pushed_at\":\"2026-08-30T10:15:00Z\",\"junk\":\"" + padding + "\"}")));
+
+        PollResult result = client.poll("owner", "huge", null);
+
+        assertThat(result).isInstanceOfSatisfying(PollResult.Failed.class,
+                failed -> assertThat(failed.reason()).contains("длиннее"));
     }
 
     @Test
@@ -202,6 +258,28 @@ class GitHubClientTest {
     }
 
     @Test
+    @DisplayName("ответ закрывается после разбора: иначе соединения утекают")
+    void closesResponseAfterExchange() {
+        wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(REPO_JSON)));
+
+        CountingRequestFactory factory = new CountingRequestFactory(new SimpleClientHttpRequestFactory());
+        GitHubProperties properties = new GitHubProperties(
+                wireMock.baseUrl(), "", 1, Duration.ofMillis(10),
+                Duration.ofSeconds(1), Duration.ofSeconds(2));
+        GitHubClient tracked = new GitHubClient(
+                RestClient.builder().baseUrl(wireMock.baseUrl()).requestFactory(factory).build(),
+                new ObjectMapper(), properties);
+
+        tracked.poll("owner", "repo", null);
+
+        assertThat(factory.closes.get()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("ответ без поля pushed_at не считается обновлением")
     void missingPushedAtIsFailure() {
         wireMock.stubFor(get(urlPathEqualTo("/repos/owner/repo"))
@@ -213,5 +291,80 @@ class GitHubClientTest {
         assertThat(client.poll("owner", "repo", null))
                 .isInstanceOfSatisfying(PollResult.Failed.class,
                         failed -> assertThat(failed.reason()).contains("pushed_at"));
+    }
+
+    /** Считает, сколько раз закрыли ответ: закрытие делает сам RestClient, и это надо проверить. */
+    private record CountingRequestFactory(ClientHttpRequestFactory delegate, AtomicInteger closes)
+            implements ClientHttpRequestFactory {
+
+        CountingRequestFactory(ClientHttpRequestFactory delegate) {
+            this(delegate, new AtomicInteger());
+        }
+
+        @Override
+        public ClientHttpRequest createRequest(URI uri, HttpMethod httpMethod) throws IOException {
+            ClientHttpRequest request = delegate.createRequest(uri, httpMethod);
+            return new ClientHttpRequest() {
+                @Override
+                public ClientHttpResponse execute() throws IOException {
+                    return new CountingResponse(request.execute(), closes);
+                }
+
+                @Override
+                public OutputStream getBody() throws IOException {
+                    return request.getBody();
+                }
+
+                @Override
+                public HttpMethod getMethod() {
+                    return request.getMethod();
+                }
+
+                @Override
+                public URI getURI() {
+                    return request.getURI();
+                }
+
+                @Override
+                public HttpHeaders getHeaders() {
+                    return request.getHeaders();
+                }
+
+                @Override
+                public Map<String, Object> getAttributes() {
+                    return request.getAttributes();
+                }
+            };
+        }
+    }
+
+    private record CountingResponse(ClientHttpResponse delegate, AtomicInteger closes)
+            implements ClientHttpResponse {
+
+        @Override
+        public void close() {
+            closes.incrementAndGet();
+            delegate.close();
+        }
+
+        @Override
+        public HttpStatusCode getStatusCode() throws IOException {
+            return delegate.getStatusCode();
+        }
+
+        @Override
+        public String getStatusText() throws IOException {
+            return delegate.getStatusText();
+        }
+
+        @Override
+        public InputStream getBody() throws IOException {
+            return delegate.getBody();
+        }
+
+        @Override
+        public HttpHeaders getHeaders() {
+            return delegate.getHeaders();
+        }
     }
 }

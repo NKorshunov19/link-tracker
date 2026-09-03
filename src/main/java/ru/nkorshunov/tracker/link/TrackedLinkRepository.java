@@ -15,8 +15,13 @@ public interface TrackedLinkRepository extends JpaRepository<TrackedLink, Long> 
 
     Optional<TrackedLink> findBySubscriberAndOwnerAndRepository(String subscriber, String owner, String repository);
 
+    boolean existsBySubscriberAndOwnerAndRepository(String subscriber, String owner, String repository);
+
     /**
      * Ссылки, которые пора проверить: активные и не проверявшиеся дольше порога.
+     *
+     * Возвращаются только идентификаторы: сущность всё равно перечитывается заново
+     * в транзакции обработчика, а тянуть все строки целиком ради этого незачем.
      *
      * Сортировка по времени последней проверки, новые (null) — первыми. Так очередь
      * честная: репозиторий, который давно не смотрели, обгоняет только что проверенный,
@@ -26,10 +31,10 @@ public interface TrackedLinkRepository extends JpaRepository<TrackedLink, Long> 
      * все ссылки сразу, иначе при их росте один тик растянется на часы.
      */
     @Query("""
-            select l from TrackedLink l
+            select l.id from TrackedLink l
             where l.active = true
               and (l.lastCheckedAt is null or l.lastCheckedAt < :threshold)
             order by l.lastCheckedAt asc nulls first
             """)
-    List<TrackedLink> findDueForCheck(@Param("threshold") Instant threshold, Pageable pageable);
+    List<Long> findIdsDueForCheck(@Param("threshold") Instant threshold, Pageable pageable);
 }

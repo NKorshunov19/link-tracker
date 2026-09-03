@@ -5,8 +5,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import ru.nkorshunov.tracker.link.TrackedLink;
 import ru.nkorshunov.tracker.link.TrackedLinkRepository;
+import ru.nkorshunov.tracker.notify.Notification;
+import ru.nkorshunov.tracker.notify.Notifier;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -31,24 +32,32 @@ public class UpdateChecker {
 
     private final TrackedLinkRepository repository;
     private final LinkUpdateProcessor processor;
+    private final Notifier notifier;
     private final PollProperties properties;
     private final Clock clock;
 
     public UpdateChecker(TrackedLinkRepository repository,
                          LinkUpdateProcessor processor,
+                         Notifier notifier,
                          PollProperties properties,
                          Clock clock) {
         this.repository = repository;
         this.processor = processor;
+        this.notifier = notifier;
         this.properties = properties;
         this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${app.poll.tick:PT30S}")
     public void scheduledCheck() {
-        int processed = runOnce();
-        if (processed > 0) {
-            log.debug("Проверено ссылок за тик: {}", processed);
+        try {
+            int processed = runOnce();
+            if (processed > 0) {
+                log.debug("Проверено ссылок за тик: {}", processed);
+            }
+        } catch (RuntimeException e) {
+            // недоступная база не должна ронять тик молча — иначе обход просто перестанет работать
+            log.error("Тик планировщика завершился ошибкой", e);
         }
     }
 
@@ -59,19 +68,28 @@ public class UpdateChecker {
      */
     public int runOnce() {
         Instant threshold = clock.instant().minus(properties.minInterval());
-        List<TrackedLink> due = repository.findDueForCheck(
+        List<Long> due = repository.findIdsDueForCheck(
                 threshold, PageRequest.of(0, properties.batchSize()));
 
         int processed = 0;
-        for (TrackedLink link : due) {
+        for (Long linkId : due) {
             try {
-                processor.process(link.getId());
+                processor.process(linkId).ifPresent(this::deliver);
                 processed++;
             } catch (RuntimeException e) {
                 // Одна упавшая ссылка не должна останавливать обход остальных.
-                log.error("Ошибка обработки ссылки {}", link.getId(), e);
+                log.error("Ошибка обработки ссылки {}", linkId, e);
             }
         }
         return processed;
+    }
+
+    /** Доставка идёт после коммита и вне транзакции, поэтому её сбой ничего не откатывает. */
+    private void deliver(Notification notification) {
+        try {
+            notifier.send(notification);
+        } catch (RuntimeException e) {
+            log.error("Не удалось доставить уведомление подписчику {}", notification.subscriber(), e);
+        }
     }
 }
