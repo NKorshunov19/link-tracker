@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 class BackoffRetryTest {
 
@@ -86,6 +87,34 @@ class BackoffRetryTest {
 
         assertThat(calls.get()).isEqualTo(1);
         assertThat(slept).isEmpty();
+    }
+
+    @Test
+    @DisplayName("задержка упирается в потолок и не переполняется на больших номерах попыток")
+    void delayIsCappedAndDoesNotOverflow() {
+        BackoffRetry backoff = new BackoffRetry(64, Duration.ofSeconds(1), slept::add);
+
+        assertThat(backoff.delayForAttempt(40).toMillis())
+                .as("2^39 секунд не должны превратиться в отрицательное число")
+                .isBetween(45_000L, 75_000L);
+        assertThat(backoff.delayForAttempt(63).toMillis()).isBetween(45_000L, 75_000L);
+    }
+
+    @Test
+    @DisplayName("нулевая задержка не уходит в ноль и не роняет джиттер")
+    void zeroBackoffStillProducesPositiveDelay() {
+        BackoffRetry backoff = new BackoffRetry(3, Duration.ZERO, slept::add);
+
+        assertThat(backoff.delayForAttempt(1).toMillis()).isPositive();
+    }
+
+    @Test
+    @DisplayName("отрицательная задержка и нулевое число попыток отвергаются в конструкторе")
+    void invalidSettingsAreRejected() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new BackoffRetry(0, Duration.ofSeconds(1)));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new BackoffRetry(3, Duration.ofSeconds(-1)));
     }
 
     @Test

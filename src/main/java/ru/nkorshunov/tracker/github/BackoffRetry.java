@@ -26,6 +26,7 @@ public class BackoffRetry {
 
     private static final Logger log = LoggerFactory.getLogger(BackoffRetry.class);
     private static final double JITTER_RATIO = 0.25;
+    private static final Duration MAX_BACKOFF = Duration.ofMinutes(1);
 
     private final int maxAttempts;
     private final Duration initialBackoff;
@@ -44,6 +45,9 @@ public class BackoffRetry {
     public BackoffRetry(int maxAttempts, Duration initialBackoff, Sleeper sleeper) {
         if (maxAttempts < 1) {
             throw new IllegalArgumentException("Попыток должно быть хотя бы одна");
+        }
+        if (initialBackoff == null || initialBackoff.isNegative()) {
+            throw new IllegalArgumentException("Задержка не может быть отрицательной");
         }
         this.maxAttempts = maxAttempts;
         this.initialBackoff = initialBackoff;
@@ -77,9 +81,20 @@ public class BackoffRetry {
 
     /** Задержка для попытки: initial * 2^(attempt-1), сдвинутая случайно на ±25%. */
     Duration delayForAttempt(int attempt) {
-        long base = initialBackoff.toMillis() * (1L << (attempt - 1));
+        long base = baseDelayMillis(attempt);
         long jitter = (long) (base * JITTER_RATIO);
         long randomized = base + ThreadLocalRandom.current().nextLong(-jitter, jitter + 1);
         return Duration.ofMillis(Math.max(1, randomized));
+    }
+
+    // удвоение в цикле с проверкой потолка, а не сдвигом: 1L << 63 ушёл бы в минус,
+    // а сдвиг на 64 и больше в Java вообще считается по модулю разрядности
+    private long baseDelayMillis(int attempt) {
+        long capped = MAX_BACKOFF.toMillis();
+        long millis = initialBackoff.toMillis();
+        for (int i = 1; i < attempt && millis < capped; i++) {
+            millis *= 2;
+        }
+        return Math.min(millis, capped);
     }
 }
